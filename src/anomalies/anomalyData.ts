@@ -1,0 +1,28 @@
+import type { AnomalyDefinition } from '../game/types';
+
+export const ANOMALIES: AnomalyDefinition[] = [
+  { id: 'clock_reverse', name: '倒转的时钟', area: 'checkout', category: 'environment', startHour: .45, dangerRate: .16, hint: '秒针正向左走' },
+  { id: 'receipt_message', name: '不存在的小票', area: 'checkout', category: 'text', startHour: .5, dangerRate: .15, hint: '打印机吐出了求救信息' },
+  { id: 'door_figure', name: '门外静止人影', area: 'checkout', category: 'figure', startHour: 1.7, dangerRate: .24, hint: '玻璃门外有人一动不动' },
+  { id: 'red_customer', name: '红衣顾客', area: 'checkout', category: 'customer', startHour: 2.4, dangerRate: .3, hint: '本店没有红制服员工' },
+  { id: 'missing_cans', name: '罐头消失', area: 'shelves', category: 'item', startHour: .5, dangerRate: .12, hint: '第二层原本摆满了罐头' },
+  { id: 'price_666', name: '异常价格', area: 'shelves', category: 'text', startHour: .8, dangerRate: .14, hint: '价签不是正常货币数字' },
+  { id: 'poster_face', name: '海报换脸', area: 'shelves', category: 'text', startHour: 1.4, dangerRate: .19, hint: '海报上的笑脸变了' },
+  { id: 'aisle_figure', name: '货架后的人', area: 'shelves', category: 'figure', startHour: 2.1, dangerRate: .26, hint: '货架缝隙里似乎有眼睛' },
+  { id: 'freezer_dark', name: '冷柜熄灭', area: 'drinks', category: 'environment', startHour: .7, dangerRate: .15, hint: '一组冷柜灯不亮了' },
+  { id: 'extra_bottles', name: '饮料增殖', area: 'drinks', category: 'item', startHour: 1, dangerRate: .13, hint: '瓶子挤出了货架' },
+  { id: 'freezer_reflection', name: '冰柜倒影', area: 'drinks', category: 'figure', startHour: 1.8, dangerRate: .26, hint: '倒影里多了一个轮廓' },
+  { id: 'wrong_brand', name: '陌生品牌', area: 'drinks', category: 'text', startHour: 2.2, dangerRate: .18, hint: '包装写着“你”' },
+  { id: 'chair_turn', name: '转向的椅子', area: 'dining', category: 'item', startHour: .5, dangerRate: .12, hint: '椅子不再朝向桌子' },
+  { id: 'window_eyes', name: '窗外的眼睛', area: 'dining', category: 'figure', startHour: 2, dangerRate: .25, hint: '雨夜里不该有那么大的眼睛' },
+  { id: 'microwave_time', name: '不存在的时间', area: 'dining', category: 'text', startHour: 1.2, dangerRate: .17, hint: '微波炉显示了 66:66' },
+  { id: 'faceless_guest', name: '无脸食客', area: 'dining', category: 'customer', startHour: 2.8, dangerRate: .3, hint: '有人坐着，却没有五官' },
+  { id: 'box_move', name: '移动的纸箱', area: 'storage', category: 'item', startHour: .6, dangerRate: .14, hint: '带箭头的箱子换了位置' },
+  { id: 'storage_open', name: '仓库门开启', area: 'storage', category: 'environment', startHour: 1.1, dangerRate: .2, hint: '员工门应始终锁着' },
+  { id: 'bloody_steps', name: '红色脚印', area: 'storage', category: 'environment', startHour: 2.5, dangerRate: .28, hint: '地面出现通向门口的印迹' },
+  { id: 'door_shadow', name: '门缝黑影', area: 'storage', category: 'danger', startHour: 3.4, dangerRate: .38, hint: '黑暗正从门缝里溢出' },
+  { id: 'camera_lost', name: '监控信号丢失', area: 'security', category: 'danger', startHour: 2.6, dangerRate: .34, hint: '一个画面只剩雪花' },
+  { id: 'rule_changed', name: '守则被篡改', area: 'security', category: 'text', startHour: 2, dangerRate: .22, hint: '守则让你打开仓库门' },
+  { id: 'monitor_person', name: '屏幕内的人', area: 'security', category: 'figure', startHour: 3, dangerRate: .32, hint: '现场没有人，但画面里有' },
+  { id: 'black_approach', name: '靠近的黑影', area: 'security', category: 'danger', startHour: 4.1, dangerRate: .45, hint: '它正在从监控深处靠近' },
+];
