@@ -1,6 +1,6 @@
 import Phaser from 'phaser';
 import { ANOMALIES } from '../anomalies/anomalyData';
-import { loadSave, writeSave } from '../game/save';
+import { saveRunResult } from '../game/save';
 import type { ResultData } from '../game/types';
 import { addScanlines, button, panel, title } from '../ui/ui';
 
@@ -18,18 +18,7 @@ export class ResultScene extends Phaser.Scene {
 
   create(): void {
     const ending = ENDING[this.result.ending];
-    const save = loadSave();
-    save.bestScore = Math.max(save.bestScore, this.result.score);
-    const gradeOrder = ['—', 'D', 'C', 'B', 'A', 'S'];
-    if (gradeOrder.indexOf(this.result.grade) > gradeOrder.indexOf(save.bestGrade)) save.bestGrade = this.result.grade;
-    if (!save.unlockedEndings.includes(this.result.ending)) save.unlockedEndings.push(this.result.ending);
-    // Discovered entries represent successfully resolved anomalies. The count remains honest across runs.
-    const discoverCount = Math.min(ANOMALIES.length, save.discoveredAnomalies.length + this.result.stats.resolved);
-    for (const anomaly of ANOMALIES) {
-      if (save.discoveredAnomalies.length >= discoverCount) break;
-      if (!save.discoveredAnomalies.includes(anomaly.id)) save.discoveredAnomalies.push(anomaly.id);
-    }
-    writeSave(save);
+    const save = saveRunResult(this.result, ANOMALIES.map((item) => item.id));
 
     this.cameras.main.setBackgroundColor('#03090c');
     addScanlines(this, 90);

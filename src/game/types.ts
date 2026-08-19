@@ -42,17 +42,37 @@ export interface GameStats {
   maxDanger: number;
 }
 
+export type RunStatus = 'in_progress' | 'completed' | 'failed' | 'abandoned';
+
+export interface RunRecord {
+  id: string;
+  startedAt: number;
+  updatedAt: number;
+  status: RunStatus;
+  difficulty: Difficulty;
+  score: number;
+  grade: string;
+  elapsedSeconds: number;
+  resolved: number;
+  wrongReports: number;
+  eventCorrect: number;
+}
+
 export interface SaveData {
-  version: 1;
+  version: 2;
   bestScore: number;
   bestGrade: string;
   unlockedEndings: string[];
   discoveredAnomalies: string[];
+  runHistory: RunRecord[];
   tutorialSeen: boolean;
   settings: { volume: number; flicker: boolean; difficulty: Difficulty };
 }
 
 export interface ResultData {
+  runId: string;
+  startedAt: number;
+  difficulty: Difficulty;
   won: boolean;
   ending: 'normal' | 'excellent' | 'missing';
   score: number;

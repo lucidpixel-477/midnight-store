@@ -1,13 +1,14 @@
 import Phaser from 'phaser';
+import { ANOMALIES } from '../anomalies/anomalyData';
 import { AnomalyManager } from '../anomalies/anomalyManager';
 import { AudioBus } from '../game/AudioBus';
 import { renderArea, updateAreaParallax } from '../game/AreaRenderer';
 import { COLORS, DIFFICULTY_CONFIG, MEMORY_SECONDS } from '../game/config';
 import { GameSession } from '../game/GameSession';
-import { loadSave } from '../game/save';
+import { loadSave, saveRunCheckpoint, saveRunResult } from '../game/save';
 import {
   AREA_IDS, AREA_NAMES, CATEGORY_IDS, CATEGORY_NAMES,
-  type AnomalyCategory, type AreaId, type ResultData,
+  type AnomalyCategory, type AreaId, type ResultData, type RunRecord, type RunStatus,
 } from '../game/types';
 import { addScanlines, button, panel } from '../ui/ui';
 
@@ -76,6 +77,9 @@ export class StoreScene extends Phaser.Scene {
   private parallaxY = 0;
   private depthFocus = false;
   private transitioning = false;
+  private runId = '';
+  private runStartedAt = 0;
+  private checkpointTimer = 0;
 
   constructor() { super('Store'); }
 
@@ -84,6 +88,9 @@ export class StoreScene extends Phaser.Scene {
     this.session = new GameSession(save.settings.difficulty);
     this.anomalyManager = new AnomalyManager();
     this.audio = new AudioBus(save.settings.volume);
+    this.runStartedAt = Date.now();
+    this.runId = `shift-${this.runStartedAt}-${Math.random().toString(36).slice(2, 8)}`;
+    this.saveCheckpoint('in_progress');
     const middle = Phaser.Utils.Array.Shuffle([NIGHT_EVENTS[1]!, NIGHT_EVENTS[3]!]);
     this.eventsForRun = [NIGHT_EVENTS[0]!, middle[0]!, NIGHT_EVENTS[2]!, middle[1]!];
     this.cameras.main.setBackgroundColor('#020609');
@@ -105,6 +112,7 @@ export class StoreScene extends Phaser.Scene {
     this.add.rectangle(1124, 32, 180, 9, 0x15272b).setOrigin(0, .5).setDepth(51);
     this.dangerFill = this.add.rectangle(1124, 32, 7, 9, COLORS.green).setOrigin(0, .5).setDepth(52);
     this.dangerLabel = this.add.text(1214, 46, '稳定', { fontFamily: 'Microsoft YaHei', fontSize: '12px', color: '#7bc9b0' }).setOrigin(.5).setDepth(51);
+    button(this, 940, 32, '暂停  [P]', () => this.togglePause(), { width: 105, height: 36, fontSize: 13, fill: 0x0b181d, stroke: 0x557477 }).setDepth(53);
 
     this.add.rectangle(640, 680, 1280, 80, 0x061014, .98).setDepth(50);
     this.statusText = this.add.text(640, 653, '', { fontFamily: 'Microsoft YaHei', fontSize: '14px', color: '#759597' }).setOrigin(.5).setDepth(52);
@@ -129,10 +137,11 @@ export class StoreScene extends Phaser.Scene {
     keyboard.on('keydown-R', () => this.openReport());
     keyboard.on('keydown-F', () => this.toggleFlashlight());
     keyboard.on('keydown-E', () => this.toggleDepthFocus());
+    keyboard.on('keydown-P', () => this.togglePause());
     keyboard.on('keydown-ESC', () => this.handleEscape());
     this.input.on('pointermove', (pointer: Phaser.Input.Pointer) => {
-      this.parallaxX = (.5 - pointer.x / 1280) * 28;
-      this.parallaxY = (.5 - pointer.y / 720) * 18;
+      this.parallaxX = (.5 - pointer.x / 1280) * 16;
+      this.parallaxY = (.5 - pointer.y / 720) * 10;
     });
   }
 
@@ -161,12 +170,12 @@ export class StoreScene extends Phaser.Scene {
     const area = AREA_IDS[this.areaIndex] ?? 'checkout';
     this.areaView = renderArea(this, area, this.anomalyManager?.inArea(area) ?? [], this.session?.danger ?? 0, this.session?.powerOn ?? true, this.session?.flashlight ?? false);
     this.areaView.setDepth(1);
-    if (this.depthFocus) this.areaView.setPosition(-45, -18).setScale(1.07);
+    if (this.depthFocus) this.areaView.setPosition(-16, -6).setScale(1.025);
     if (entryDirection) {
-      const targetX = this.depthFocus ? -45 : 0;
-      const targetY = this.depthFocus ? -18 : 0;
+      const targetX = this.depthFocus ? -16 : 0;
+      const targetY = this.depthFocus ? -6 : 0;
       this.areaView.setPosition(entryDirection * 150, 10).setScale(.96).setAlpha(0);
-      this.tweens.add({ targets: this.areaView, x: targetX, y: targetY, scaleX: this.depthFocus ? 1.07 : 1, scaleY: this.depthFocus ? 1.07 : 1, alpha: 1, duration: 220, ease: 'Sine.easeOut' });
+      this.tweens.add({ targets: this.areaView, x: targetX, y: targetY, scaleX: this.depthFocus ? 1.025 : 1, scaleY: this.depthFocus ? 1.025 : 1, alpha: 1, duration: 220, ease: 'Sine.easeOut' });
     }
     if (this.areaName) this.areaName.setText(`${String(this.areaIndex + 1).padStart(2, '0')} / 06   ${AREA_NAMES[area]}`);
   }
@@ -177,6 +186,8 @@ export class StoreScene extends Phaser.Scene {
     const delta = Math.min(.1, deltaMs / 1000);
     this.session.tick(delta);
     this.anomalyManager.update(delta);
+    this.checkpointTimer -= delta;
+    if (this.checkpointTimer <= 0) this.saveCheckpoint('in_progress');
     this.statusTimer = Math.max(0, this.statusTimer - delta);
     if (!this.statusTimer && !this.modalOverlay) this.statusText.setText('');
 
@@ -344,35 +355,56 @@ export class StoreScene extends Phaser.Scene {
     this.audio.click();
     this.tweens.add({
       targets: this.areaView,
-      x: this.depthFocus ? -45 : 0,
-      y: this.depthFocus ? -18 : 0,
-      scaleX: this.depthFocus ? 1.07 : 1,
-      scaleY: this.depthFocus ? 1.07 : 1,
+      x: this.depthFocus ? -16 : 0,
+      y: this.depthFocus ? -6 : 0,
+      scaleX: this.depthFocus ? 1.025 : 1,
+      scaleY: this.depthFocus ? 1.025 : 1,
       duration: 260,
       ease: 'Sine.easeInOut',
     });
-    this.showStatus(this.depthFocus ? '你向场景内部靠近了一步。近景可能遮住某些细节。' : '你退回了正常观察位置。', '#8fc0bd', 3);
+    this.showStatus(this.depthFocus ? '视线轻微向场景内部聚焦。' : '你退回了正常观察位置。', '#8fc0bd', 3);
   }
 
   private handleEscape(): void {
     if (this.reportOverlay) { this.closeReport(); return; }
     if (this.modalOverlay) return;
+    this.togglePause();
+  }
+
+  private togglePause(): void {
     if (this.pauseOverlay) { this.resumeGame(); return; }
+    if (this.reportOverlay || this.modalOverlay || this.finishing) return;
     this.pauseGame();
   }
 
   private pauseGame(): void {
     this.session.paused = true;
+    this.time.paused = true;
+    this.tweens.pauseAll();
     const c = this.add.container(0, 0).setDepth(120);
     c.add(this.add.rectangle(640, 360, 1280, 720, 0x010405, .9).setInteractive());
     c.add(panel(this, 640, 360, 520, 360));
     c.add(this.add.text(640, 245, '夜班暂停', { fontFamily: 'Microsoft YaHei', fontSize: '34px', color: '#d9eeea' }).setOrigin(.5));
-    c.add(button(this, 640, 335, '继续巡查', () => this.resumeGame(), { width: 300 }));
-    c.add(button(this, 640, 405, '放弃并返回主菜单', () => this.scene.start('Menu'), { width: 300, stroke: 0x9d5b61 }));
+    c.add(this.add.text(640, 292, '游戏计时与异常事件已停止', { fontFamily: 'Microsoft YaHei', fontSize: '14px', color: '#769597' }).setOrigin(.5));
+    c.add(button(this, 640, 350, '继续游戏  [P / Esc]', () => this.resumeGame(), { width: 300 }));
+    c.add(button(this, 640, 420, '放弃并返回主菜单', () => this.quitToMenu(), { width: 300, stroke: 0x9d5b61 }));
     this.pauseOverlay = c;
   }
 
-  private resumeGame(): void { this.pauseOverlay?.destroy(true); this.pauseOverlay = undefined; this.session.paused = false; }
+  private resumeGame(): void {
+    this.pauseOverlay?.destroy(true);
+    this.pauseOverlay = undefined;
+    this.time.paused = false;
+    this.tweens.resumeAll();
+    this.session.paused = false;
+  }
+
+  private quitToMenu(): void {
+    this.saveCheckpoint('abandoned');
+    this.time.paused = false;
+    this.tweens.resumeAll();
+    this.scene.start('Menu');
+  }
   private isBlocked(): boolean { return Boolean(this.reportOverlay || this.modalOverlay || this.pauseOverlay || this.finishing); }
 
   private showStatus(message: string, color: string, seconds: number): void {
@@ -385,15 +417,50 @@ export class StoreScene extends Phaser.Scene {
     const attempts = this.session.stats.resolved + this.session.stats.wrongReports;
     const accuracy = attempts ? this.session.stats.resolved / attempts : 0;
     const excellent = won && accuracy >= .9 && this.session.stats.wrongReports === 0 && this.session.stats.eventWrong === 0 && this.session.stats.resolved >= 7;
-    const score = Math.max(0, Math.round(this.session.stats.resolved * 120 + this.session.stats.eventCorrect * 180 + (won ? 600 : 0) - this.session.stats.wrongReports * 90 - this.session.danger * 3));
-    const grade = score >= 1800 ? 'S' : score >= 1350 ? 'A' : score >= 950 ? 'B' : score >= 550 ? 'C' : 'D';
+    const score = this.currentScore(won);
+    const grade = this.gradeFor(score);
     const result: ResultData = {
+      runId: this.runId, startedAt: this.runStartedAt, difficulty: this.session.difficulty,
       won, ending: !won ? 'missing' : excellent ? 'excellent' : 'normal', score, grade, accuracy,
       stats: this.session.stats, danger: this.session.danger, elapsedMinutes: Math.min(360, Math.floor(this.session.hour * 60)),
     };
+    saveRunResult(result, ANOMALIES.map((item) => item.id));
     if (!won) { this.audio.error(); this.cameras.main.shake(700, .025); }
     else this.audio.success();
     this.cameras.main.fadeOut(1200, won ? 210 : 40, won ? 225 : 0, won ? 210 : 8);
     this.time.delayedCall(1250, () => this.scene.start('Result', result));
+  }
+
+  private saveCheckpoint(status: RunStatus): void {
+    if (!this.runId || !this.session) return;
+    const record: RunRecord = {
+      id: this.runId,
+      startedAt: this.runStartedAt,
+      updatedAt: Date.now(),
+      status,
+      difficulty: this.session.difficulty,
+      score: this.currentScore(false),
+      grade: status === 'in_progress' || status === 'abandoned' ? '—' : this.gradeFor(this.currentScore(false)),
+      elapsedSeconds: this.session.elapsedSeconds,
+      resolved: this.session.stats.resolved,
+      wrongReports: this.session.stats.wrongReports,
+      eventCorrect: this.session.stats.eventCorrect,
+    };
+    saveRunCheckpoint(record);
+    this.checkpointTimer = 3;
+  }
+
+  private currentScore(won: boolean): number {
+    return Math.max(0, Math.round(
+      this.session.stats.resolved * 120
+      + this.session.stats.eventCorrect * 180
+      + (won ? 600 : 0)
+      - this.session.stats.wrongReports * 90
+      - this.session.danger * 3,
+    ));
+  }
+
+  private gradeFor(score: number): string {
+    return score >= 1800 ? 'S' : score >= 1350 ? 'A' : score >= 950 ? 'B' : score >= 550 ? 'C' : 'D';
   }
 }
