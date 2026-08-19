@@ -4,6 +4,22 @@ import type { ActiveAnomaly, AreaId } from './types';
 
 type G = Phaser.GameObjects.Graphics;
 
+interface ParallaxLayer {
+  target: Phaser.GameObjects.Container;
+  factor: number;
+  baseX: number;
+  baseY: number;
+}
+
+const VANISHING_POINT: Record<AreaId, { x: number; y: number }> = {
+  checkout: { x: 710, y: 292 },
+  shelves: { x: 640, y: 282 },
+  drinks: { x: 560, y: 286 },
+  dining: { x: 660, y: 288 },
+  storage: { x: 640, y: 278 },
+  security: { x: 610, y: 300 },
+};
+
 export function renderArea(
   scene: Phaser.Scene,
   area: AreaId,
@@ -13,19 +29,28 @@ export function renderArea(
   flashlight: boolean,
 ): Phaser.GameObjects.Container {
   const container = scene.add.container(0, 0);
+  const backLayer = scene.add.container(0, 0);
+  const worldLayer = scene.add.container(0, 0);
+  const frontLayer = scene.add.container(0, 0);
+  const effectLayer = scene.add.container(0, 0);
+  container.add([backLayer, worldLayer, frontLayer, effectLayer]);
+
+  const back = scene.add.graphics();
+  backLayer.add(back);
+  drawPerspectiveShell(back, area);
+
   const g = scene.add.graphics();
-  container.add(g);
+  worldLayer.add(g);
   const has = (id: string) => anomalies.some((item) => item.id === id);
   const text = (x: number, y: number, value: string, size = 18, color = '#c6ded9', origin = .5) => {
     const obj = scene.add.text(x, y, value, { fontFamily: 'Microsoft YaHei, sans-serif', fontSize: `${size}px`, color, align: 'center' }).setOrigin(origin);
-    container.add(obj); return obj;
+    worldLayer.add(obj); return obj;
   };
 
-  g.fillStyle(0x071318).fillRect(0, 65, 1280, 575);
-  g.fillStyle(0x0d262b).fillRect(0, 565, 1280, 75);
-  g.lineStyle(2, 0x153a40, .8).lineBetween(0, 565, 1280, 565);
+  const vanish = VANISHING_POINT[area];
+  drawDepthGuides(g, vanish.x, vanish.y);
   g.fillStyle(0xa7d9d0, .8).fillRect(140, 92, 1000, 5);
-  g.fillStyle(0xa7d9d0, .08).fillRect(120, 96, 1040, 310);
+  g.fillStyle(0xa7d9d0, .055).fillTriangle(140, 97, 1140, 97, vanish.x, vanish.y);
 
   if (area === 'checkout') drawCheckout(g, text, has);
   else if (area === 'shelves') drawShelves(g, text, has);
@@ -34,17 +59,118 @@ export function renderArea(
   else if (area === 'storage') drawStorage(g, text, has);
   else drawSecurity(g, text, has);
 
+  const foreground = scene.add.graphics();
+  frontLayer.add(foreground);
+  drawForeground(foreground, area);
+
+  const effects = scene.add.graphics();
+  effectLayer.add(effects);
+
   if (!powerOn) {
-    g.fillStyle(0x000104, flashlight ? .78 : .94).fillRect(0, 65, 1280, 575);
+    effects.fillStyle(0x000104, flashlight ? .78 : .94).fillRect(0, 65, 1280, 575);
     if (flashlight) {
-      g.fillStyle(0xe7ead0, .11).fillCircle(640, 350, 250);
-      g.lineStyle(2, 0xe7ead0, .13).strokeCircle(640, 350, 250);
+      effects.fillStyle(0xe7ead0, .11).fillCircle(640, 350, 250);
+      effects.lineStyle(2, 0xe7ead0, .13).strokeCircle(640, 350, 250);
     }
   }
   if (danger > 58) {
-    g.fillStyle(0x5b0711, Math.min(.18, (danger - 58) / 260)).fillRect(0, 65, 1280, 575);
+    effects.fillStyle(0x5b0711, Math.min(.18, (danger - 58) / 260)).fillRect(0, 65, 1280, 575);
   }
+
+  container.setData('parallaxLayers', [
+    { target: backLayer, factor: .22, baseX: 0, baseY: 0 },
+    { target: worldLayer, factor: .62, baseX: 0, baseY: 0 },
+    { target: frontLayer, factor: 1.15, baseX: 0, baseY: 0 },
+  ] satisfies ParallaxLayer[]);
   return container;
+}
+
+export function updateAreaParallax(view: Phaser.GameObjects.Container, xAmount: number, yAmount: number): void {
+  const layers = view.getData('parallaxLayers') as ParallaxLayer[] | undefined;
+  if (!layers) return;
+  for (const layer of layers) {
+    const x = layer.baseX + xAmount * layer.factor;
+    const y = layer.baseY + yAmount * layer.factor * .45;
+    layer.target.x = Phaser.Math.Linear(layer.target.x, x, .09);
+    layer.target.y = Phaser.Math.Linear(layer.target.y, y, .09);
+  }
+}
+
+function drawPerspectiveShell(g: G, area: AreaId): void {
+  const vp = VANISHING_POINT[area];
+  g.fillStyle(0x050b0f).fillRect(0, 65, 1280, 575);
+  // Ceiling, side walls and floor all converge on one vanishing point.
+  g.fillStyle(0x0b1d22).fillTriangle(0, 65, 1280, 65, vp.x, vp.y);
+  g.fillStyle(0x0a2025).fillTriangle(0, 65, 0, 640, vp.x, vp.y);
+  g.fillStyle(0x10282c).fillTriangle(1280, 65, 1280, 640, vp.x, vp.y);
+  g.fillStyle(0x102326).fillTriangle(0, 640, 1280, 640, vp.x, vp.y);
+
+  g.lineStyle(2, 0x315057, .34);
+  for (let x = -120; x <= 1400; x += 120) g.lineBetween(vp.x, vp.y, x, 640);
+  for (let i = 1; i <= 8; i++) {
+    const t = i / 8;
+    const y = vp.y + Math.pow(t, 1.72) * (640 - vp.y);
+    const left = vp.x * (1 - Math.pow(t, 1.22));
+    const right = vp.x + (1280 - vp.x) * Math.pow(t, 1.22);
+    g.lineStyle(i > 5 ? 2 : 1, 0x3b6063, .14 + t * .2).lineBetween(left, y, right, y);
+  }
+
+  // Receding fluorescent fixtures make the Z direction immediately readable.
+  for (let i = 0; i < 4; i++) {
+    const depth = i / 4;
+    const width = 300 - depth * 175;
+    const y = 90 + depth * 132;
+    const centerX = Phaser.Math.Linear(640, vp.x, depth);
+    g.fillStyle(0xc6eee4, .55 - depth * .08).fillRect(centerX - width / 2, y, width, 5 - depth * .6);
+    g.fillStyle(0x9ce3d6, .045).fillTriangle(centerX - width / 2, y + 5, centerX + width / 2, y + 5, vp.x, vp.y + 95);
+  }
+
+  g.lineStyle(3, 0x45666c, .42)
+    .lineBetween(0, 65, vp.x, vp.y)
+    .lineBetween(1280, 65, vp.x, vp.y)
+    .lineBetween(0, 640, vp.x, vp.y)
+    .lineBetween(1280, 640, vp.x, vp.y);
+}
+
+function drawDepthGuides(g: G, vx: number, vy: number): void {
+  g.lineStyle(2, 0x83c4bd, .12)
+    .lineBetween(92, 560, vx, vy)
+    .lineBetween(1188, 560, vx, vy);
+  for (let i = 0; i < 7; i++) {
+    const z = i / 7;
+    const x = Phaser.Math.Linear(155, vx, z);
+    const y = Phaser.Math.Linear(545, vy, z);
+    g.fillStyle(0x9dded4, .18 - z * .1).fillCircle(x, y, 3 - z * 1.5);
+  }
+}
+
+function drawForeground(g: G, area: AreaId): void {
+  g.fillStyle(0x010406, .5).fillTriangle(0, 65, 58, 65, 0, 640);
+  g.fillStyle(0x010406, .5).fillTriangle(1280, 65, 1222, 65, 1280, 640);
+  g.lineStyle(3, 0x79b4ae, .2).lineBetween(58, 65, 18, 640).lineBetween(1222, 65, 1262, 640);
+
+  if (area === 'shelves') {
+    g.fillStyle(0x071216, .94).fillTriangle(0, 145, 200, 220, 0, 610);
+    g.fillStyle(0x071216, .94).fillTriangle(1280, 145, 1080, 220, 1280, 610);
+    for (let y = 260; y < 590; y += 82) {
+      g.lineStyle(8, 0x2f5053, .9).lineBetween(0, y + 30, 165, y).lineBetween(1280, y + 30, 1115, y);
+    }
+  } else if (area === 'drinks') {
+    g.fillStyle(0x102a31, .76).fillTriangle(1000, 160, 1280, 90, 1280, 620);
+    g.lineStyle(8, 0x55777c, .5).lineBetween(1000, 160, 1060, 590);
+  } else if (area === 'checkout') {
+    g.fillStyle(0x0b2023, .96).fillTriangle(420, 540, 1135, 450, 1280, 640).fillRect(420, 540, 860, 100);
+    g.lineStyle(5, 0x315458, .8).lineBetween(420, 540, 1135, 450);
+  } else if (area === 'dining') {
+    g.fillStyle(0x101b1d, .82).fillTriangle(0, 590, 260, 515, 350, 640);
+    g.fillStyle(0x101b1d, .82).fillTriangle(1280, 590, 1030, 515, 930, 640);
+  } else if (area === 'storage') {
+    g.fillStyle(0x705b40, .88).fillRect(-25, 485, 220, 180).fillRect(1085, 510, 220, 155);
+    g.lineStyle(3, 0x3f3225, .9).lineBetween(0, 485, 195, 665).lineBetween(1085, 510, 1280, 650);
+  } else {
+    g.fillStyle(0x071114, .9).fillTriangle(0, 520, 410, 485, 505, 640);
+    g.fillStyle(0x071114, .9).fillTriangle(1280, 520, 870, 485, 775, 640);
+  }
 }
 
 function drawCheckout(g: G, text: TextMaker, has: Has): void {

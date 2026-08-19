@@ -36,7 +36,7 @@ export class MenuScene extends Phaser.Scene {
     this.add.text(930, 580, `最佳评价  ${save.bestGrade}\n最高得分  ${save.bestScore}\n已收录异常  ${save.discoveredAnomalies.length}/24`, {
       fontFamily: 'Microsoft YaHei', fontSize: '14px', color: '#91adaf', lineSpacing: 8,
     });
-    this.add.text(20, 688, 'A / D 切换区域 · R 报告 · F 手电筒 · Esc 暂停', { fontSize: '13px', color: '#547075' });
+    this.add.text(20, 688, 'A / D 切换区域 · E 向内观察 · R 报告 · F 手电筒 · Esc 暂停', { fontSize: '13px', color: '#547075' });
     addScanlines(this);
   }
 

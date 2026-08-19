@@ -1,7 +1,7 @@
 import Phaser from 'phaser';
 import { AnomalyManager } from '../anomalies/anomalyManager';
 import { AudioBus } from '../game/AudioBus';
-import { renderArea } from '../game/AreaRenderer';
+import { renderArea, updateAreaParallax } from '../game/AreaRenderer';
 import { COLORS, DIFFICULTY_CONFIG, MEMORY_SECONDS } from '../game/config';
 import { GameSession } from '../game/GameSession';
 import { loadSave } from '../game/save';
@@ -72,6 +72,10 @@ export class StoreScene extends Phaser.Scene {
   private eventsForRun: NightEvent[] = [];
   private finishing = false;
   private statusTimer = 0;
+  private parallaxX = 0;
+  private parallaxY = 0;
+  private depthFocus = false;
+  private transitioning = false;
 
   constructor() { super('Store'); }
 
@@ -112,6 +116,7 @@ export class StoreScene extends Phaser.Scene {
     button(this, 930, 681, '异常报告  [R]', () => this.openReport(), { width: 220, height: 42, fontSize: 15, fill: 0x28302d, stroke: 0xe5bd68 }).setDepth(53);
     button(this, 350, 681, '监控室', () => { this.areaIndex = 5; this.renderCurrentArea(); }, { width: 170, height: 42, fontSize: 15, stroke: 0x557477 }).setDepth(53);
     button(this, 525, 681, '手电筒  [F]', () => this.toggleFlashlight(), { width: 160, height: 42, fontSize: 15, stroke: 0x557477 }).setDepth(53);
+    button(this, 700, 681, '向内观察  [E]', () => this.toggleDepthFocus(), { width: 170, height: 42, fontSize: 15, stroke: 0x557477 }).setDepth(53);
   }
 
   private setupInput(): void {
@@ -123,26 +128,51 @@ export class StoreScene extends Phaser.Scene {
     keyboard.on('keydown-RIGHT', () => this.move(1));
     keyboard.on('keydown-R', () => this.openReport());
     keyboard.on('keydown-F', () => this.toggleFlashlight());
+    keyboard.on('keydown-E', () => this.toggleDepthFocus());
     keyboard.on('keydown-ESC', () => this.handleEscape());
+    this.input.on('pointermove', (pointer: Phaser.Input.Pointer) => {
+      this.parallaxX = (.5 - pointer.x / 1280) * 28;
+      this.parallaxY = (.5 - pointer.y / 720) * 18;
+    });
   }
 
   private move(direction: number): void {
-    if (this.isBlocked()) return;
+    if (this.isBlocked() || this.transitioning) return;
+    this.transitioning = true;
+    this.depthFocus = false;
+    const outgoing = this.areaView;
+    this.areaView = undefined;
     this.areaIndex = (this.areaIndex + direction + AREA_IDS.length) % AREA_IDS.length;
     this.audio.click();
-    this.cameras.main.fadeOut(80, 2, 8, 10);
-    this.time.delayedCall(85, () => { this.renderCurrentArea(); this.cameras.main.fadeIn(110, 2, 8, 10); });
+    if (outgoing) {
+      this.tweens.add({
+        targets: outgoing, x: -direction * 150, y: 10, alpha: 0, scaleX: .96, scaleY: .96,
+        duration: 170, ease: 'Sine.easeIn', onComplete: () => outgoing.destroy(true),
+      });
+    }
+    this.time.delayedCall(95, () => {
+      this.renderCurrentArea(direction);
+      this.transitioning = false;
+    });
   }
 
-  private renderCurrentArea(): void {
+  private renderCurrentArea(entryDirection = 0): void {
     this.areaView?.destroy(true);
     const area = AREA_IDS[this.areaIndex] ?? 'checkout';
     this.areaView = renderArea(this, area, this.anomalyManager?.inArea(area) ?? [], this.session?.danger ?? 0, this.session?.powerOn ?? true, this.session?.flashlight ?? false);
     this.areaView.setDepth(1);
+    if (this.depthFocus) this.areaView.setPosition(-45, -18).setScale(1.07);
+    if (entryDirection) {
+      const targetX = this.depthFocus ? -45 : 0;
+      const targetY = this.depthFocus ? -18 : 0;
+      this.areaView.setPosition(entryDirection * 150, 10).setScale(.96).setAlpha(0);
+      this.tweens.add({ targets: this.areaView, x: targetX, y: targetY, scaleX: this.depthFocus ? 1.07 : 1, scaleY: this.depthFocus ? 1.07 : 1, alpha: 1, duration: 220, ease: 'Sine.easeOut' });
+    }
     if (this.areaName) this.areaName.setText(`${String(this.areaIndex + 1).padStart(2, '0')} / 06   ${AREA_NAMES[area]}`);
   }
 
   update(_time: number, deltaMs: number): void {
+    if (this.areaView) updateAreaParallax(this.areaView, this.parallaxX, this.parallaxY);
     if (this.finishing || this.session.paused) return;
     const delta = Math.min(.1, deltaMs / 1000);
     this.session.tick(delta);
@@ -306,6 +336,22 @@ export class StoreScene extends Phaser.Scene {
     if (this.isBlocked()) return;
     this.session.flashlight = !this.session.flashlight; this.audio.click(); this.renderCurrentArea();
     this.showStatus(this.session.flashlight ? '手电筒已打开。' : '手电筒已关闭。', '#8ca9aa', 2);
+  }
+
+  private toggleDepthFocus(): void {
+    if (this.isBlocked() || this.transitioning || !this.areaView) return;
+    this.depthFocus = !this.depthFocus;
+    this.audio.click();
+    this.tweens.add({
+      targets: this.areaView,
+      x: this.depthFocus ? -45 : 0,
+      y: this.depthFocus ? -18 : 0,
+      scaleX: this.depthFocus ? 1.07 : 1,
+      scaleY: this.depthFocus ? 1.07 : 1,
+      duration: 260,
+      ease: 'Sine.easeInOut',
+    });
+    this.showStatus(this.depthFocus ? '你向场景内部靠近了一步。近景可能遮住某些细节。' : '你退回了正常观察位置。', '#8fc0bd', 3);
   }
 
   private handleEscape(): void {
